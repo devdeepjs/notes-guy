@@ -1,0 +1,36 @@
+# macOS
+.DS_Store
+
+# Swift build state
+.build/
+.swiftpm/
+DerivedData/
+*.xcodeproj/
+*.xcworkspace/
+
+# Packaged local app output
+dist/
+*.app/
+
+# Generated icon intermediates. AppIcon.icns is the committed app asset.
+packaging/macos/AppIcon.iconset/
+
+# Runtime/vault artifacts if someone points the notes folder at this repo.
+/.notes-guy/
+/Wiki/
+/Sessions/
+/Raw/
+*.m4a
+*.wav
+*.mp4
+*.mov
+
+# Local temp/editor files
+*.log
+*.tmp
+*.swp
+
+# Private planning/spec artifacts are kept out of the public app repo.
+/.agents/
+/.specify/
+/specs/
