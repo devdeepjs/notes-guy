@@ -74,6 +74,7 @@ final class NotesGuyViewModel: ObservableObject {
     private let classifier = ScreenContextClassifier()
     private static let proactiveWatchingDefaultsKey = "NotesGuyProactiveWatchingEnabled"
     private static let vaultPathDefaultsKey = "NotesGuyVaultPath"
+    private static let recoverableSessionAge: TimeInterval = 12 * 60 * 60
     #if canImport(AppKit)
     private let floatingPromptController = FloatingPromptController()
     #endif
@@ -743,8 +744,10 @@ final class NotesGuyViewModel: ObservableObject {
             let configuration = VaultConfiguration(vaultPath: vaultPath)
             let workspace = WikiWorkspace(configuration: configuration)
             let store = SessionStore(workspace: workspace)
+            let oldestRecoverableStart = Date().addingTimeInterval(-Self.recoverableSessionAge)
             guard let session = try store.loadSessions()
                 .filter({ $0.status == .recording || $0.status == .processing })
+                .filter({ $0.startedAt >= oldestRecoverableStart })
                 .sorted(by: { $0.startedAt > $1.startedAt })
                 .first else {
                 return
@@ -1353,6 +1356,12 @@ private enum CodexSessionNoteWriterError: Error, LocalizedError {
         var cleaned = value
             .replacingOccurrences(of: "\n", with: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let errorRange = cleaned.range(of: "ERROR:") {
+            cleaned = String(cleaned[errorRange.lowerBound...])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
         for marker in ["-------- user", "exec /bin/", "exec\n/bin/"] {
             if let range = cleaned.range(of: marker) {
                 cleaned = String(cleaned[..<range.lowerBound])
@@ -1408,15 +1417,28 @@ private struct CodexSessionNoteWriter {
         imagePaths: [String]
     ) throws -> CodexWriteOutcome {
         let codex = try codexPath()
-        try runCodex(
-            codex: codex,
-            vaultPath: vaultPath,
-            imagePaths: imagePaths,
-            prompt: sourceNotePrompt(notePath: notePath, rawPath: rawPath, sessionID: sessionID)
-        )
-
         let workspace = WikiWorkspace(configuration: VaultConfiguration(vaultPath: vaultPath))
         _ = try? workspace.bootstrap()
+
+        do {
+            try runCodex(
+                codex: codex,
+                vaultPath: vaultPath,
+                imagePaths: imagePaths,
+                prompt: sourceNotePrompt(notePath: notePath, rawPath: rawPath, sessionID: sessionID)
+            )
+        } catch {
+            try? runLocalSeedFallback(
+                workspace: workspace,
+                vaultPath: vaultPath,
+                notePath: notePath,
+                rawPath: rawPath,
+                sessionID: sessionID,
+                error: error
+            )
+            return .sourceReadyEnrichmentFailed(error.localizedDescription)
+        }
+
         do {
             _ = try LocalWikiEnrichmentSeedWriter().writeSeeds(
                 sourceNoteURL: URL(fileURLWithPath: notePath),
@@ -1452,6 +1474,29 @@ private struct CodexSessionNoteWriter {
             return .sourceReadyEnrichmentFailed(error.localizedDescription)
         }
         return .completed
+    }
+
+    private static func runLocalSeedFallback(
+        workspace: WikiWorkspace,
+        vaultPath: String,
+        notePath: String,
+        rawPath: String,
+        sessionID: String,
+        error: Error
+    ) throws {
+        _ = try? LocalWikiEnrichmentSeedWriter().writeSeeds(
+            sourceNoteURL: URL(fileURLWithPath: notePath),
+            sourceNoteRelativePath: relativePath(notePath, rootPath: vaultPath),
+            workspace: workspace,
+            sessionID: sessionID
+        )
+        try appendEnrichmentFailure(
+            vaultPath: vaultPath,
+            notePath: notePath,
+            rawPath: rawPath,
+            sessionID: sessionID,
+            error: error
+        )
     }
 
     private static func sourceNotePrompt(notePath: String, rawPath: String, sessionID: String) -> String {
@@ -1812,17 +1857,8 @@ private struct CodexSessionNoteWriter {
     }
 
     private static func codexPath() throws -> String {
-        if let configured = ProcessInfo.processInfo.environment["NOTES_GUY_CODEX_PATH"],
-           configured.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false,
-           FileManager.default.isExecutableFile(atPath: configured) {
-            return configured
-        }
-        let candidates = [
-            "/opt/homebrew/bin/codex",
-            "/usr/local/bin/codex"
-        ]
-        if let candidate = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) {
-            return candidate
+        if let resolved = CodexExecutableResolver.resolve() {
+            return resolved
         }
         throw CodexSessionNoteWriterError.codexNotFound
     }

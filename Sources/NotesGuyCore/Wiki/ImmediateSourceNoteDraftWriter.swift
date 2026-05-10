@@ -143,6 +143,18 @@ public struct ImmediateSourceNoteDraftWriter: Sendable {
             """
         }
 
+        if conceptSet.contains("Distributed Queues") {
+            return """
+            ### Distributed Queues
+
+            A distributed queue decouples producers from consumers while preserving durable message handoff across more than one machine. The design question is not just "where do messages go"; it is how the system owns ordering, retries, acknowledgements, visibility timeouts, backpressure, partitioning, and failure recovery.
+
+            ### Durable Use
+
+            Treat this source as system-design material for queue semantics, broker architecture, partitioned consumption, delivery guarantees, and operational failure modes. The enrichment pass should split durable pages for queues, message delivery guarantees, retries, and partitioning when enough transcript or screenshot evidence exists.
+            """
+        }
+
         if conceptSet.contains("Java") {
             return """
             ### Java Study Material
@@ -227,6 +239,7 @@ public struct ImmediateSourceNoteDraftWriter: Sendable {
         }
 
         add("System Design", when: ["system design", "load balancer", "database", "sharding", "replication"])
+        add("Distributed Queues", when: ["distributed queue", "distributed queues", "design-a-distributed-queue", "message queue", "message broker"])
         add("Database Fundamentals", when: ["database-fundamentals", "database fundamentals", "crud", "replication", "sharding", "transactions"])
         add("Database Schema Design", when: ["schema", "products", "reviews", "customers", "orders", "relational"])
         add("Indexing", when: ["index", "indexes", "indexing"])
@@ -253,6 +266,10 @@ public struct ImmediateSourceNoteDraftWriter: Sendable {
         for concept in concepts {
             switch concept {
             case "System Design":
+                add("Wiki/topics/system-design.md|System Design")
+            case "Distributed Queues":
+                add("Wiki/concepts/distributed-queues.md|Distributed Queues")
+                add("Wiki/guides/distributed-queues-for-system-design-interviews.md|Distributed Queues for System Design Interviews")
                 add("Wiki/topics/system-design.md|System Design")
             case "Database Fundamentals":
                 add("Wiki/guides/database-fundamentals-for-system-design-interviews.md|Database Fundamentals for System Design Interviews")

@@ -116,4 +116,43 @@ final class ImmediateSourceNoteDraftWriterTests: XCTestCase {
         XCTAssertTrue(note.contains("Partial Indexes"))
         XCTAssertFalse(note.contains("source_url: \"\""))
     }
+
+    func testDraftCreatesUsefulDistributedQueueSeedWithoutFrames() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("notes-guy-immediate-draft-tests", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let rawURL = root.appendingPathComponent(".notes-guy/raw/session-3", isDirectory: true)
+        try FileManager.default.createDirectory(at: rawURL, withIntermediateDirectories: true)
+
+        let noteURL = root.appendingPathComponent("Wiki/sources/interview-pen-distributed-queue-session.md")
+        try FileManager.default.createDirectory(at: noteURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+
+        let startedAt = Date(timeIntervalSince1970: 1_800_001_000)
+        let session = LearningSession(
+            id: "session-3",
+            title: "Interview Pen - Design A Distributed Queue",
+            sourceURL: "https://interviewpen.com/courses/system-design/design-a-distributed-queue",
+            sourceHint: "App: Brave Browser",
+            sessionType: .general,
+            startedAt: startedAt,
+            endedAt: startedAt.addingTimeInterval(1800),
+            status: .completed,
+            rawArtifactRoot: ".notes-guy/raw/session-3"
+        )
+
+        try ImmediateSourceNoteDraftWriter().writeDraft(
+            noteURL: noteURL,
+            session: session,
+            rawURL: rawURL,
+            observations: []
+        )
+
+        let note = try String(contentsOf: noteURL, encoding: .utf8)
+        XCTAssertTrue(note.contains("Distributed Queues"))
+        XCTAssertTrue(note.contains("A distributed queue decouples producers from consumers"))
+        XCTAssertTrue(note.contains("[[Wiki/concepts/distributed-queues.md|Distributed Queues]]"))
+        XCTAssertTrue(note.contains("[[Wiki/guides/distributed-queues-for-system-design-interviews.md|Distributed Queues for System Design Interviews]]"))
+        XCTAssertTrue(note.contains("[[Wiki/topics/system-design.md|System Design]]"))
+        XCTAssertFalse(note.contains("not enough structured transcript to write a final concept page locally"))
+    }
 }

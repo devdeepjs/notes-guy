@@ -5,19 +5,54 @@ public enum CodexExecFallbackError: Error, Equatable {
     case noOutput
 }
 
+public enum CodexExecutableResolver {
+    public static func resolve(
+        configuredPath: String? = ProcessInfo.processInfo.environment["NOTES_GUY_CODEX_PATH"],
+        candidatePaths: [String] = defaultCandidatePaths()
+    ) -> String? {
+        if let configured = configuredPath?.trimmingCharacters(in: .whitespacesAndNewlines),
+           configured.isEmpty == false,
+           FileManager.default.isExecutableFile(atPath: configured) {
+            return configured
+        }
+
+        return candidatePaths.first(where: { FileManager.default.isExecutableFile(atPath: $0) })
+    }
+
+    public static func defaultPath() -> String {
+        resolve() ?? defaultCandidatePaths().first ?? "codex"
+    }
+
+    public static func defaultCandidatePaths() -> [String] {
+        var candidates: [String] = []
+        func add(_ path: String) {
+            guard path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false,
+                  candidates.contains(path) == false else {
+                return
+            }
+            candidates.append(path)
+        }
+
+        add(FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".homebrew/bin/codex").path)
+        add("/opt/homebrew/bin/codex")
+        add("/usr/local/bin/codex")
+
+        if let path = ProcessInfo.processInfo.environment["PATH"] {
+            for directory in path.split(separator: ":").map(String.init) {
+                add(URL(fileURLWithPath: directory).appendingPathComponent("codex").path)
+            }
+        }
+
+        return candidates
+    }
+}
+
 public struct CodexExecFallbackClient: WikiAgentClient {
     public var codexExecutablePath: String
 
     public init(codexExecutablePath: String? = nil) {
-        self.codexExecutablePath = codexExecutablePath ?? Self.defaultCodexExecutablePath()
-    }
-
-    private static func defaultCodexExecutablePath() -> String {
-        if let configured = ProcessInfo.processInfo.environment["NOTES_GUY_CODEX_PATH"],
-           configured.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
-            return configured
-        }
-        return "/opt/homebrew/bin/codex"
+        self.codexExecutablePath = codexExecutablePath ?? CodexExecutableResolver.defaultPath()
     }
 
     public func run(_ request: WikiAgentRequest) async throws -> WikiAgentResult {

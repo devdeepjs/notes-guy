@@ -42,9 +42,19 @@ if command -v codesign >/dev/null 2>&1; then
   codesign --force --deep --sign "$CODE_SIGN_IDENTITY" "$APP_BUNDLE" >/dev/null
 fi
 
-if [[ -n "${NOTES_GUY_INSTALL_DIR:-}" ]]; then
+can_install_into() {
+  local dir="$1"
+  [[ -d "$dir" && -w "$dir" ]]
+}
+
+can_update_existing_app_in() {
+  local dir="$1"
+  [[ -d "$dir/${APP_NAME}.app" && -w "$dir/${APP_NAME}.app" ]]
+}
+
+if [[ -n "${NOTES_GUY_INSTALL_DIR:-}" ]] && { can_install_into "$NOTES_GUY_INSTALL_DIR" || can_update_existing_app_in "$NOTES_GUY_INSTALL_DIR"; }; then
   INSTALL_DIR="$NOTES_GUY_INSTALL_DIR"
-elif [[ -d "$SYSTEM_APPLICATIONS_DIR/${APP_NAME}.app" && -w "$SYSTEM_APPLICATIONS_DIR/${APP_NAME}.app" ]]; then
+elif can_install_into "$SYSTEM_APPLICATIONS_DIR" || can_update_existing_app_in "$SYSTEM_APPLICATIONS_DIR"; then
   INSTALL_DIR="$SYSTEM_APPLICATIONS_DIR"
 else
   INSTALL_DIR="$USER_APPLICATIONS_DIR"
@@ -54,14 +64,21 @@ mkdir -p "$INSTALL_DIR"
 
 INSTALLED_APP="$INSTALL_DIR/${APP_NAME}.app"
 pkill -f "${APP_NAME}.app/Contents/MacOS" >/dev/null 2>&1 || true
-rm -rf "$INSTALLED_APP"
-cp -R "$APP_BUNDLE" "$INSTALLED_APP"
+if can_install_into "$INSTALL_DIR"; then
+  rm -rf "$INSTALLED_APP"
+  cp -R "$APP_BUNDLE" "$INSTALLED_APP"
+else
+  rm -rf "$INSTALLED_APP/Contents"
+  mkdir -p "$INSTALLED_APP"
+  cp -R "$APP_BUNDLE/Contents" "$INSTALLED_APP/Contents"
+fi
 
 for STALE_APP in "$HOME/Desktop/${APP_NAME}.app" "$USER_APPLICATIONS_DIR/${APP_NAME}.app" "$SYSTEM_APPLICATIONS_DIR/${APP_NAME}.app"; do
-  if [[ "$STALE_APP" != "$INSTALLED_APP" && -d "$STALE_APP" && -w "$STALE_APP" ]]; then
+  if [[ "$STALE_APP" != "$INSTALLED_APP" && -d "$STALE_APP" && -w "$(dirname "$STALE_APP")" ]]; then
     rm -rf "$STALE_APP"
   fi
 done
 
-echo "Created $APP_BUNDLE"
+rm -rf "$APP_BUNDLE"
+
 echo "Installed to $INSTALLED_APP"
