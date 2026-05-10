@@ -73,14 +73,16 @@ final class NotesGuyViewModel: ObservableObject {
     private var attentionRequestID: Int?
     private let classifier = ScreenContextClassifier()
     private static let proactiveWatchingDefaultsKey = "NotesGuyProactiveWatchingEnabled"
+    private static let vaultPathDefaultsKey = "NotesGuyVaultPath"
     #if canImport(AppKit)
     private let floatingPromptController = FloatingPromptController()
     #endif
 
     init() {
-        self.vaultPath = VaultConfiguration.defaultVaultURL().path
+        self.vaultPath = Self.initialVaultPath()
         self.proactiveWatchingEnabled = UserDefaults.standard.object(forKey: Self.proactiveWatchingDefaultsKey) as? Bool ?? false
         bootstrapVault()
+        recoverInterruptedSessionIfNeeded()
         startProactiveWatcherIfNeeded()
     }
 
@@ -104,6 +106,16 @@ final class NotesGuyViewModel: ObservableObject {
             statusText = result.changedFiles.isEmpty ? "Vault already initialized" : "Vault initialized"
         } catch {
             statusText = "Vault setup failed: \(error.localizedDescription)"
+        }
+    }
+
+    func updateVaultPath(_ path: String) {
+        vaultPath = path
+        let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            UserDefaults.standard.removeObject(forKey: Self.vaultPathDefaultsKey)
+        } else {
+            UserDefaults.standard.set(trimmed, forKey: Self.vaultPathDefaultsKey)
         }
     }
 
@@ -646,6 +658,7 @@ final class NotesGuyViewModel: ObservableObject {
 
     private func startSession(title: String, sourceHint: String, sessionType: SessionType) {
         do {
+            UserDefaults.standard.set(vaultPath, forKey: Self.vaultPathDefaultsKey)
             let configuration = VaultConfiguration(vaultPath: vaultPath)
             let workspace = WikiWorkspace(configuration: configuration)
             _ = try workspace.bootstrap()
@@ -711,6 +724,55 @@ final class NotesGuyViewModel: ObservableObject {
             syncFloatingPrompt()
         } catch {
             statusText = "Session creation failed: \(error.localizedDescription)"
+        }
+    }
+
+    private static func initialVaultPath() -> String {
+        if let persisted = UserDefaults.standard.string(forKey: vaultPathDefaultsKey),
+           persisted.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+            return persisted
+        }
+        return VaultStore.configurationFromEnvironment().vaultPath
+    }
+
+    private func recoverInterruptedSessionIfNeeded() {
+        guard isSessionActive == false else {
+            return
+        }
+        do {
+            let configuration = VaultConfiguration(vaultPath: vaultPath)
+            let workspace = WikiWorkspace(configuration: configuration)
+            let store = SessionStore(workspace: workspace)
+            guard let session = try store.loadSessions()
+                .filter({ $0.status == .recording || $0.status == .processing })
+                .sorted(by: { $0.startedAt > $1.startedAt })
+                .first else {
+                return
+            }
+            let noteRelativePath = session.changedWikiPaths.first ?? ""
+            guard noteRelativePath.isEmpty == false else {
+                statusText = "Recovered unfinished session, but note path is missing"
+                return
+            }
+            let noteURL = workspace.configuration.url(for: noteRelativePath)
+            let rawURL = workspace.rawSessionURL(sessionID: session.id)
+            activeSession = ActiveSessionState(
+                session: session,
+                noteURL: noteURL,
+                noteRelativePath: noteRelativePath,
+                rawURL: rawURL,
+                permissions: Self.capturePermissions()
+            )
+            lastSessionID = session.id
+            currentNotePath = noteURL.path
+            changedFiles = [noteRelativePath]
+            isSessionActive = true
+            activeObservationCount = 0
+            activeFrameCount = 0
+            statusText = "Recovered active note. Stop and write when done."
+            startSessionRecorderLoop()
+        } catch {
+            statusText = "Session recovery failed: \(error.localizedDescription)"
         }
     }
 
@@ -1816,7 +1878,10 @@ struct NotesGuyRootView: View {
                 Text("Notes folder")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                TextField("Wiki folder", text: $model.vaultPath)
+                TextField("Wiki folder", text: Binding(
+                    get: { model.vaultPath },
+                    set: { model.updateVaultPath($0) }
+                ))
                     .textFieldStyle(.roundedBorder)
                     .font(.system(.body, design: .monospaced))
             }
