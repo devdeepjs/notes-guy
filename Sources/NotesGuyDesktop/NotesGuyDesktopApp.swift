@@ -59,6 +59,7 @@ final class NotesGuyViewModel: ObservableObject {
     @Published var isSessionActive = false
     @Published var activeObservationCount = 0
     @Published var activeFrameCount = 0
+    @Published var activeAudioSource = "Audio starting"
 
     private var watchTask: Task<Void, Never>?
     private var sessionRecorderTask: Task<Void, Never>?
@@ -68,7 +69,7 @@ final class NotesGuyViewModel: ObservableObject {
     private var pendingCodexStates: [ActiveSessionState] = []
     private var activeSession: ActiveSessionState?
     private var lastUsableContext: ScreenSourceContext?
-    private let audioRecorder = MicrophoneAudioCaptureService()
+    private var activeAudioRecorder: AudioCaptureService?
     private var lastPromptFingerprint: String?
     private var attentionRequestID: Int?
     private let classifier = ScreenContextClassifier()
@@ -165,14 +166,14 @@ final class NotesGuyViewModel: ObservableObject {
 
     func takeNotesOnDetectedContext() {
         if detectedContext == nil || Self.isOwnAppContext(detectedContext) {
-            guard let context = lastUsableContext else {
-                statusText = "Switch to the video, then start notes"
-                proactivePromptVisible = false
-                syncFloatingPrompt()
-                return
+            if let context = lastUsableContext {
+                detectedContext = context
+                applySuggestion(classifier.classify(context), context: context, proactive: false)
+            } else {
+                suggestedTitle = "Screen learning session"
+                suggestedSourceHint = "Manual capture started. Notes Guy will use captured screen frames, OCR, source URLs, captions, and audio when available."
+                suggestedSessionType = .general
             }
-            detectedContext = context
-            applySuggestion(classifier.classify(context), context: context, proactive: false)
         }
 
         let title = suggestedTitle.isEmpty ? "Screen learning session" : suggestedTitle
@@ -204,7 +205,8 @@ final class NotesGuyViewModel: ObservableObject {
         }
         sessionRecorderTask?.cancel()
         sessionRecorderTask = nil
-        let audioArtifact = try? audioRecorder.stopRecording()
+        let audioArtifact = try? activeAudioRecorder?.stopRecording()
+        activeAudioRecorder = nil
 
         do {
             let configuration = VaultConfiguration(vaultPath: vaultPath)
@@ -239,18 +241,18 @@ final class NotesGuyViewModel: ObservableObject {
             isSessionActive = false
             activeObservationCount = 0
             activeFrameCount = 0
+            activeAudioSource = "Audio stopped"
             noteToastVisible = false
             syncFloatingPrompt()
+            statusText = "Writing wiki note from captured screen context..."
+            startCodexSynthesis(state: state)
             if let audioArtifact {
-                statusText = "Transcribing audio, then writing wiki note..."
+                statusText = "Writing note now; audio transcript will be added when ready..."
                 startAudioTranscription(
                     audioArtifact: audioArtifact,
                     state: state,
                     rerunCodexAfterTranscript: true
                 )
-            } else {
-                statusText = "Writing wiki note from screen context..."
-                startCodexSynthesis(state: state)
             }
         } catch {
             statusText = "Stop failed: \(error.localizedDescription)"
@@ -708,6 +710,7 @@ final class NotesGuyViewModel: ObservableObject {
             noteToastVisible = false
             isSessionActive = true
             activeObservationCount = 0
+            activeAudioSource = "Audio starting"
             let permissions = Self.capturePermissions()
             activeSession = ActiveSessionState(
                 session: session,
@@ -772,6 +775,7 @@ final class NotesGuyViewModel: ObservableObject {
             isSessionActive = true
             activeObservationCount = 0
             activeFrameCount = 0
+            activeAudioSource = "Audio not recovered"
             statusText = "Recovered active note. Stop and write when done."
             startSessionRecorderLoop()
         } catch {
@@ -806,9 +810,43 @@ final class NotesGuyViewModel: ObservableObject {
     }
 
     private func startAudioCapture(rawURL: URL, noteURL: URL) {
-        guard let permissions = activeSession?.permissions, permissions.microphoneAuthorized else {
+        guard let permissions = activeSession?.permissions else {
+            return
+        }
+
+        if permissions.screenRecordingAuthorized {
+            let audioURL = rawURL
+                .appendingPathComponent("audio", isDirectory: true)
+                .appendingPathComponent("system-audio.m4a")
+            let recorder = SystemAudioCaptureService()
+            do {
+                let artifact = try recorder.startRecording(to: audioURL)
+                activeAudioRecorder = recorder
+                activeAudioSource = "System audio"
+                if var state = activeSession {
+                    state.audioArtifact = artifact
+                    activeSession = state
+                }
+                try SessionNoteUpdater().upsertAudioArtifact(
+                    relativeRawPath(for: audioURL),
+                    to: noteURL
+                )
+                return
+            } catch {
+                try? SessionNoteUpdater().upsertCaptureStatus(
+                    [
+                        "System audio capture could not start: \(error.localizedDescription)",
+                        "Falling back to microphone audio when available."
+                    ],
+                    to: noteURL
+                )
+            }
+        }
+
+        guard permissions.microphoneAuthorized else {
+            activeAudioSource = "No audio"
             try? SessionNoteUpdater().upsertTranscriptStatus(
-                "Microphone recording skipped because permission is not already granted.",
+                "Audio recording skipped because neither system audio nor microphone capture is available.",
                 to: noteURL
             )
             return
@@ -818,7 +856,10 @@ final class NotesGuyViewModel: ObservableObject {
             .appendingPathComponent("audio", isDirectory: true)
             .appendingPathComponent("microphone.m4a")
         do {
-            let artifact = try audioRecorder.startRecording(to: audioURL)
+            let recorder = MicrophoneAudioCaptureService()
+            let artifact = try recorder.startRecording(to: audioURL)
+            activeAudioRecorder = recorder
+            activeAudioSource = "Microphone"
             if var state = activeSession {
                 state.audioArtifact = artifact
                 activeSession = state
@@ -828,6 +869,7 @@ final class NotesGuyViewModel: ObservableObject {
                 to: noteURL
             )
         } catch {
+            activeAudioSource = "No audio"
             try? SessionNoteUpdater().upsertTranscriptStatus(
                 "Microphone recording could not start: \(error.localizedDescription)",
                 to: noteURL
@@ -1112,8 +1154,9 @@ final class NotesGuyViewModel: ObservableObject {
 
     private func writeCaptureStatus(permissions: CapturePermissionSnapshot, noteURL: URL) {
         let lines = [
-            "Screen capture: \(permissions.screenRecordingAuthorized ? "available" : "not granted; skipped to avoid permission prompt")",
-            "Microphone: \(permissions.microphoneAuthorized ? "available" : "not granted; skipped to avoid permission prompt")",
+            "Screen/OCR capture: \(permissions.screenRecordingAuthorized ? "available" : "not granted; screenshots skipped to avoid permission prompt")",
+            "System audio: \(permissions.screenRecordingAuthorized ? "available through ScreenCaptureKit" : "not granted; system audio requires Screen & System Audio Recording permission")",
+            "Microphone fallback: \(permissions.microphoneAuthorized ? "available" : "not granted; skipped to avoid permission prompt")",
             "Speech transcription: \(permissions.speechAuthorized ? "available" : "not granted; skipped to avoid permission prompt")"
         ]
         try? SessionNoteUpdater().upsertCaptureStatus(lines, to: noteURL)
@@ -1942,6 +1985,9 @@ struct NotesGuyRootView: View {
                     Text("\(model.activeFrameCount) frames")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    Text(model.activeAudioSource)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     Button("Stop and write note") {
                         model.stopCurrentSession()
                     }
@@ -2213,7 +2259,7 @@ struct FloatingPromptView: View {
 
     private var subtitle: String {
         if model.isSessionActive {
-            return "\(model.activeFrameCount) visual frames captured. Audio is recording."
+            return "\(model.activeFrameCount) visual frames captured. \(model.activeAudioSource) recording."
         }
         if model.noteToastVisible {
             return model.currentNotePath ?? "Saved to your notes folder"

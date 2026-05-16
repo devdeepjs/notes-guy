@@ -75,4 +75,40 @@ final class LocalWikiEnrichmentSeedWriterTests: XCTestCase {
         let log = try String(contentsOf: workspace.logURL, encoding: .utf8)
         XCTAssertTrue(log.contains("Local seed enrichment"))
     }
+
+    func testUsesFrontmatterTitleWhenHeadingIsMissing() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("notes-guy-local-seed-tests", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let workspace = WikiWorkspace(configuration: VaultConfiguration(vaultURL: root.appendingPathComponent("notes", isDirectory: true)))
+        _ = try workspace.bootstrap()
+
+        let sourceRelativePath = "Wiki/sources/browser-reading-session.md"
+        let sourceURL = workspace.configuration.url(for: sourceRelativePath)
+        try FileManager.default.createDirectory(at: sourceURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try """
+        ---
+        title: "Browser Reading Session"
+        status: "source-draft"
+        related_notes:
+          - "[[Wiki/concepts/browser-reading.md|Browser Reading]]"
+        ---
+
+        ## Source Notes
+
+        ### Browser Reading
+
+        - Atomic idea: a reading session can be captured from OCR and active-window context.
+        """.write(to: sourceURL, atomically: true, encoding: .utf8)
+
+        _ = try LocalWikiEnrichmentSeedWriter().writeSeeds(
+            sourceNoteURL: sourceURL,
+            sourceNoteRelativePath: sourceRelativePath,
+            workspace: workspace,
+            sessionID: "session-frontmatter"
+        )
+
+        let concept = try String(contentsOf: workspace.configuration.url(for: "Wiki/concepts/browser-reading.md"), encoding: .utf8)
+        XCTAssertTrue(concept.contains("[[Wiki/sources/browser-reading-session.md|Browser Reading Session]]"))
+    }
 }

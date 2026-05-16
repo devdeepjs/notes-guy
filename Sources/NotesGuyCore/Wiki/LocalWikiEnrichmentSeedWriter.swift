@@ -215,7 +215,8 @@ public struct LocalWikiEnrichmentSeedWriter: Sendable {
     }
 
     private func frontmatterValue(_ key: String, in markdown: String) -> String? {
-        let pattern = #"(?m)^\#(key):\s*"?([^"\n]+)"?\s*$"#
+        let escapedKey = NSRegularExpression.escapedPattern(for: key)
+        let pattern = #"(?m)^\#(escapedKey):\s*"?([^"\n]+)"?\s*$"#
         guard let regex = try? NSRegularExpression(pattern: pattern),
               let match = regex.firstMatch(in: markdown, range: NSRange(markdown.startIndex..., in: markdown)),
               let range = Range(match.range(at: 1), in: markdown) else {
