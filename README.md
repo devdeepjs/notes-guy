@@ -1,75 +1,96 @@
 # Notes Guy
 
-Notes Guy is a local-first macOS note-taking assistant for turning anything you are learning on screen into Obsidian-style Markdown. Start a note, read or watch normally, then stop when you are done. Notes Guy captures screen frames, OCR text, source URLs/titles, captions when available, and audio when permitted, then writes a source note plus durable wiki pages.
+Notes Guy is a local-first macOS app that turns what you read, watch, and listen to into Obsidian-style Markdown notes.
 
-It is inspired by Andrej Karpathy's LLM wiki idea: plain Markdown files should become a personal, LLM-readable knowledge base that grows from source material, follow-up discussions, and repeated refinement. See Karpathy's gist: <https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f>.
+Open an article, video, paper, docs page, code walkthrough, or meeting. Click **Take note now**. When you are done, click **Stop and write**. Notes Guy captures screen context, OCR text, source metadata, captions when available, and audio when permitted, then writes a durable note into your local notes folder.
 
-This is not a RAG app, meeting bot, browser extension, or realtime overlay. The MVP loop is:
+The goal is not to create a video recap. The goal is to build a personal technical wiki: source-backed concept notes, links, open questions, and future prompts that can keep evolving.
 
-```text
-read/watch/listen -> take notes -> write Markdown -> enrich wiki -> discuss later -> append/update notes
-```
+Notes Guy is inspired by Andrej Karpathy's LLM wiki idea: <https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f>.
 
-## What It Does Today
+## Status
 
-- Runs as a macOS menu bar app named `Notes Guy`.
-- Defaults the notes vault to `~/Documents/Notes Guy Vault` and creates it if missing.
-- Starts and stops explicit note sessions from the menu bar.
-- Captures screenshots and OCR text during a session until you click `Stop and write`.
-- Records system audio through ScreenCaptureKit when screen/system-audio permission is available.
-- Falls back to microphone recording when system audio is unavailable.
-- Attempts speech transcription and browser/YouTube caption extraction when available.
-- Captures screen/source context without repeatedly forcing macOS permission prompts.
-- Writes a source Markdown note immediately, so the session is never empty.
-- Writes a local wiki enrichment seed first, then runs Codex CLI for deeper enrichment.
-- Creates and updates Obsidian-style files under `Wiki/`.
-- Keeps raw artifacts under `.notes-guy/raw/` inside the configured vault.
+This is an early macOS MVP for personal use and source-based distribution.
 
-## Current Note Pipeline
+- Works as a menu bar app named `Notes Guy`.
+- Builds with Swift Package Manager.
+- Packages into a normal `.app` bundle.
+- Stores notes and raw capture artifacts in a user-selected local folder.
+- Uses local macOS capture APIs and optional local Codex CLI enrichment.
+- Not notarized yet.
+- Not an App Store app yet.
 
-1. `Take notes` creates a session record and starter Markdown note.
-2. While the session is active, Notes Guy records observations, transcript/caption signals, and raw artifacts.
-3. `Stop and write` immediately writes a readable source note from captured screen/source context.
-4. Audio transcription continues in the background and can trigger another enrichment pass when it finishes.
-5. A fast local enrichment step writes concept-oriented wiki seed notes from the available source text.
-6. A slower Codex enrichment step can expand, connect, and improve the wiki using the vault context.
+## What It Is
 
-The important behavior is that `Stop and write` does not wait on slow audio or Codex work before leaving you with a Markdown note.
+Notes Guy is for background note capture while learning.
 
-## Where Notes Go
+Typical use cases:
 
-Default vault:
+- Watching a YouTube lecture or course video.
+- Reading technical blogs, papers, or docs.
+- Following a coding tutorial.
+- Reviewing interview-prep material.
+- Capturing learning from a meeting or walkthrough.
+
+The core loop is:
 
 ```text
-~/Documents/Notes Guy Vault
+observe source -> capture evidence -> write Markdown -> enrich wiki -> discuss later -> update notes
 ```
 
-Important paths inside the vault:
+## What It Is Not
 
-```text
-Wiki/index.md
-Wiki/concepts/
-Wiki/guides/
-Wiki/sources/
-.notes-guy/sessions/
-.notes-guy/raw/
-```
+Notes Guy is intentionally small in v1.
 
-The vault path is configurable from the app UI. Do not point the vault at the source repo unless you intentionally want generated notes beside the code.
+- Not a RAG product.
+- Not a vector database.
+- Not a browser extension.
+- Not a meeting bot.
+- Not a real-time answer overlay.
+- Not an Obsidian plugin.
+- Not a cloud sync service.
 
-## Install And Run
+It writes local Markdown first. Everything else is secondary.
 
-Build and install the macOS app:
+## Features
+
+- Menu bar app with one main action: take notes.
+- Configurable notes folder, defaulting to `~/Documents/Notes Guy Vault`.
+- Manual `Take note now` flow that works for any visible source.
+- Optional proactive prompt when a likely video or learning page is detected.
+- Session capture that continues until explicit `Stop and write`.
+- Periodic screenshots with duplicate-frame filtering.
+- OCR and source-window context capture.
+- System audio recording through ScreenCaptureKit when permission is available.
+- Microphone fallback when system audio is unavailable.
+- Best-effort speech transcription.
+- Best-effort browser and YouTube caption extraction.
+- Immediate source note writing so a session does not end empty.
+- Local wiki seed generation before slower enrichment finishes.
+- Optional Codex CLI enrichment for deeper concept notes and cross-links.
+- Basic session recovery if the app exits during capture.
+
+## Quick Start
+
+Requirements:
+
+- macOS 15 or newer.
+- Xcode command line tools.
+- Swift Package Manager.
+- Optional: Codex CLI for richer wiki enrichment.
+
+Build and install:
 
 ```bash
-cd /path/to/notes-guy
+git clone https://github.com/<your-github-user>/notes-guy.git
+cd notes-guy
 ./scripts/package-macos-app.sh
 open "/Applications/Notes Guy.app"
 ```
 
-The script builds the release binary and installs `Notes Guy.app` into `/Applications` when writable. If `/Applications` is not writable, it falls back to `~/Applications`.
+The packaging script installs to `/Applications` when possible. If that location is not writable, it installs to `~/Applications`.
 
-For local development without packaging:
+For development without packaging:
 
 ```bash
 swift run notes-guy-desktop
@@ -81,90 +102,163 @@ Run tests:
 swift test
 ```
 
-## How To Use
+## First Run
 
-1. Open `Notes Guy` from `/Applications` or Spotlight.
-2. Open the menu bar item named `Notes Guy`.
-3. Confirm the notes folder points to `~/Documents/Notes Guy Vault` or your Obsidian vault.
-4. Open the video, article, paper, docs page, code walkthrough, or meeting you want to learn from.
-5. Click `Take note now`.
-6. Watch, read, or work normally. The session keeps running until you stop it.
-7. Click `Stop and write note`.
-8. Open the note path shown by the app, or open `Wiki/index.md` in Obsidian.
+1. Open `Notes Guy`.
+2. Click the menu bar item.
+3. Confirm the notes folder, or choose your Obsidian vault.
+4. Grant macOS permissions when needed.
+5. Open the source you want to learn from.
+6. Click `Take note now`.
+7. Read, watch, or listen normally.
+8. Click `Stop and write`.
+9. Open `Wiki/index.md` in your notes folder.
 
-`Ask to take notes` is optional. Keep it off if you do not want proactive prompts while browsing. Manual `Take note now` still works.
+If you do not want proactive prompts while browsing, turn off `Ask to take notes`. Manual note capture still works.
 
 ## Permissions
 
-macOS permissions are tied to the app bundle identity:
+macOS permissions are tied to the installed app bundle identity:
 
 ```text
 dev.notesguy.desktop
 ```
 
-Grant permissions to `Notes Guy` in:
+Grant permissions in:
 
 ```text
-System Settings -> Privacy & Security -> Screen & System Audio Recording
-System Settings -> Privacy & Security -> Microphone
-System Settings -> Privacy & Security -> Speech Recognition
+System Settings > Privacy & Security > Screen & System Audio Recording
+System Settings > Privacy & Security > Microphone
+System Settings > Privacy & Security > Speech Recognition
 ```
 
-Screen & System Audio Recording is the important permission for screenshots, OCR, and system audio. Microphone is only a fallback.
+Screen & System Audio Recording is the main permission. It enables screenshots, OCR, and system audio capture.
 
-If macOS shows an older local development name, remove that old app from the permission list and grant access to the installed `Notes Guy.app`.
+Microphone is a fallback. Speech Recognition is used for Apple speech transcription when available.
 
-Notes Guy tries to check permission state before capturing. If permission is missing, it should record that fact in the note instead of repeatedly opening system prompts.
+For real use, launch the packaged app from `/Applications/Notes Guy.app` or `~/Applications/Notes Guy.app`. Running the app from Terminal during development can cause macOS to associate permissions with the development binary or Terminal instead of the installed app.
+
+## Notes Folder Layout
+
+By default, Notes Guy creates:
+
+```text
+~/Documents/Notes Guy Vault
+```
+
+Inside the vault:
+
+```text
+Wiki/index.md
+Wiki/concepts/
+Wiki/guides/
+Wiki/sources/
+.notes-guy/sessions/
+.notes-guy/raw/
+```
+
+`Wiki/` contains readable Markdown notes.
+
+`.notes-guy/` contains session metadata, raw screenshots, audio files, transcripts, and processing artifacts. This folder is useful for debugging and later enrichment, but it is not meant to be hand-edited.
+
+## Note Pipeline
+
+1. `Take note now` creates a session and starter note.
+2. Notes Guy captures source metadata, OCR text, screenshots, captions, and audio signals while you continue working.
+3. `Stop and write` immediately writes a readable source note.
+4. Transcription and enrichment can continue after the base note exists.
+5. Local enrichment creates seed wiki notes from captured evidence.
+6. Optional Codex enrichment can expand notes, connect related concepts, and update the local wiki.
+
+The important rule: stopping a session should leave a useful Markdown note even if audio transcription or Codex enrichment fails.
 
 ## Codex Enrichment
 
-The richer wiki pass uses local Codex CLI. Make sure `codex` is available in the shell environment used by the app.
+Notes Guy can use the local Codex CLI for richer wiki generation.
 
-Quick check:
+Check your setup:
 
 ```bash
 which codex
 codex --version
 ```
 
-If Codex is not available, the app should still keep the starter note and local wiki seed. The note should show a capture status entry explaining that Codex enrichment failed.
+If Codex is unavailable, Notes Guy still writes the source note and local seed notes. The Markdown file should include a capture status entry explaining that Codex enrichment did not run.
 
-## Project Layout
+Codex behavior depends on your local Codex configuration. If your Codex setup calls a hosted model provider, enrichment may send the prompt context to that provider. Raw notes and artifacts still remain in your configured local notes folder.
+
+## Privacy Model
+
+Notes Guy is local-first:
+
+- Notes are Markdown files in a folder you control.
+- Raw screenshots, audio, transcripts, and session metadata stay inside that folder.
+- The app does not include cloud sync.
+- The app does not include a vector database.
+- The app does not upload anything by itself outside the optional tools you configure, such as Codex CLI.
+
+Before publishing your own fork, do not commit generated vault data, raw recordings, local app bundles, or planning artifacts. The `.gitignore` is set up to keep those out of git.
+
+## Development
+
+Useful commands:
+
+```bash
+swift test
+swift run notes-guy
+swift run notes-guy-desktop
+./scripts/package-macos-app.sh
+```
+
+Project layout:
 
 ```text
-Sources/NotesGuyDesktop/   macOS menu bar app
-Sources/NotesGuyCLI/       small CLI entrypoint
-Sources/NotesGuyCore/Capture/     screen/audio/context capture models and services
-Sources/NotesGuyCore/Processing/  transcription and caption extraction
-Sources/NotesGuyCore/CodexAgent/  Codex CLI enrichment client and contracts
-Sources/NotesGuyCore/Session/     session model and persistence
-Sources/NotesGuyCore/Wiki/        vault bootstrap, note writers, enrichment seed writer
-Tests/NotesGuyCoreTests/          focused unit coverage
-scripts/                          packaging and icon scripts
-packaging/macos/                  app plist and icon assets
+Sources/NotesGuyDesktop/        macOS menu bar app
+Sources/NotesGuyCLI/            small CLI entrypoint
+Sources/NotesGuyCore/Capture/   screen, audio, OCR, and source context
+Sources/NotesGuyCore/Processing/ transcription and caption extraction
+Sources/NotesGuyCore/CodexAgent/ Codex CLI enrichment client
+Sources/NotesGuyCore/Session/   session model and persistence
+Sources/NotesGuyCore/Wiki/      vault bootstrap and Markdown writers
+Tests/NotesGuyCoreTests/        unit tests
+scripts/                        packaging and icon scripts
+packaging/macos/                app plist and icon
 ```
 
 ## Troubleshooting
 
-If no note appears after a session, check:
+No note appears:
 
 ```text
-~/Documents/Notes Guy Vault/Wiki/index.md
-~/Documents/Notes Guy Vault/.notes-guy/sessions.json
-~/Documents/Notes Guy Vault/.notes-guy/log.md
+Check <vault>/Wiki/index.md
+Check <vault>/.notes-guy/sessions/
+Check <vault>/.notes-guy/raw/
 ```
 
-If the note exists but is weak, check whether screen permission was granted and whether raw screenshots/frames exist under `.notes-guy/raw/<session-id>/`.
+The note is weak or says screen capture was skipped:
 
-If the app keeps saying permission is missing, quit the app, confirm the permission toggle in System Settings, and relaunch the installed app from `/Applications/Notes Guy.app`.
+```text
+Confirm Screen & System Audio Recording permission for Notes Guy.
+Quit and reopen the installed app after changing permissions.
+Start a fresh session from the packaged app, not a debug binary.
+```
 
-If you launched from Terminal during development, macOS may associate capture permission with Terminal or the debug binary instead of the installed app. Use the packaged app for real testing.
+Codex enrichment failed:
 
-## Current MVP Boundaries
+```text
+Run `which codex` and `codex --version`.
+Confirm Codex works from a normal terminal.
+The source note should still exist even when enrichment fails.
+```
 
-- macOS only.
-- System audio capture uses ScreenCaptureKit and requires Screen & System Audio Recording permission.
-- Microphone capture is a fallback.
-- Browser captions/transcript signals are best-effort.
-- The app is local-first, but Codex enrichment depends on the local Codex CLI configuration.
-- It is designed for personal Obsidian-style notes, not polished meeting minutes.
+macOS keeps asking for permission:
+
+```text
+Use the packaged app from /Applications or ~/Applications.
+Remove old development app entries from the macOS permission list.
+Keep the bundle id stable: dev.notesguy.desktop.
+```
+
+## Roadmap
+
+See [TODO.md](TODO.md) for the current reliability, capture quality, wiki quality, and packaging roadmap.
