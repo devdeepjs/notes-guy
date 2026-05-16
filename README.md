@@ -262,3 +262,7 @@ Keep the bundle id stable: dev.notesguy.desktop.
 ## Roadmap
 
 See [TODO.md](TODO.md) for the current reliability, capture quality, wiki quality, and packaging roadmap.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
